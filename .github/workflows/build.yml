@@ -62,10 +62,18 @@ jobs:
 
       # ── Python deps ──
 
-      - name: Install PyTorch + build deps
-        shell: bash
+      - name: Install PyTorch + build deps (Linux)
+        if: matrix.os_short == 'linux'
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cu126
+          pip install setuptools wheel
+
+      - name: Install PyTorch + build deps (Windows)
+        if: matrix.os_short == 'win'
+        shell: bash
+        run: |
+          # Pin to 2.5.1 on Windows — PyTorch 2.6+ has std::byte ambiguity in MSVC headers
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu126
           pip install setuptools wheel
 
       # ── Build ──
