@@ -66,12 +66,20 @@ jobs:
 
       # ── Build ──
 
-      - name: Build wheel
-        shell: bash
+      - name: Build wheel (Linux)
+        if: matrix.os_short == 'linux'
         run: |
-          TORCH_CUDA_ARCH_LIST="12.0a" pip wheel . --no-deps --wheel-dir dist/
-        env:
-          CUDA_HOME: ${{ env.CUDA_HOME }}
+          export CUDA_HOME=/usr/local/cuda-13.2
+          export TORCH_CUDA_ARCH_LIST="12.0a"
+          python setup.py bdist_wheel --dist-dir dist/
+
+      - name: Build wheel (Windows)
+        if: matrix.os_short == 'win'
+        shell: pwsh
+        run: |
+          $env:CUDA_HOME = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2"
+          $env:TORCH_CUDA_ARCH_LIST = "12.0a"
+          python setup.py bdist_wheel --dist-dir dist/
 
       # ── Sign (Windows only) ──
 
