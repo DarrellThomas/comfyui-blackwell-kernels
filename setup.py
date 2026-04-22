@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Darrell Thomas. MIT License. See LICENSE file.
 
 import os
+import sys
 from setuptools import setup, find_packages
 
 # Bypass PyTorch's CUDA version check — we need CUDA 13.2 nvcc for sm_120a
@@ -14,6 +15,12 @@ if _orig_check:
     _cpp_ext._check_cuda_version = lambda *a, **kw: None
 
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+
+# Platform-specific C++ compiler flags
+if sys.platform == "win32":
+    cxx_flags = ["/O2", "/std:c++17", "/Zc:preprocessor"]
+else:
+    cxx_flags = ["-O3", "-std=c++17"]
 
 setup(
     name="comfyui-blackwell-kernels",
@@ -30,7 +37,7 @@ setup(
                 "csrc/attention/flash_attn_sm120a.cu",
             ],
             extra_compile_args={
-                "cxx": ["-O3", "-std=c++17"],
+                "cxx": cxx_flags,
                 "nvcc": [
                     "-O3",
                     "--use_fast_math",
@@ -38,7 +45,7 @@ setup(
                     "-std=c++17",
                     "--expt-relaxed-constexpr",
                     "-lineinfo",
-                ],
+                ] + (["-Xcompiler", "/Zc:preprocessor"] if sys.platform == "win32" else []),
             },
             include_dirs=[
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),
