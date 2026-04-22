@@ -4,8 +4,6 @@ import os
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-
 setup(
     name="comfyui-blackwell-kernels",
     version="0.1.0",
@@ -18,7 +16,7 @@ setup(
         CUDAExtension(
             "blackwell_kernels._C",
             [
-                os.path.join(ROOT, "csrc/attention/flash_attn_sm120a.cu"),
+                "csrc/attention/flash_attn_sm120a.cu",
             ],
             extra_compile_args={
                 "cxx": ["-O3", "-std=c++17"],
@@ -32,7 +30,7 @@ setup(
                 ],
             },
             include_dirs=[
-                os.path.join(ROOT, "csrc", "common"),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),
             ],
         )
     ],
