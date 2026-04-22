@@ -20,8 +20,10 @@ jobs:
         include:
           - platform: ubuntu-24.04
             os_short: linux
-          - platform: windows-latest
-            os_short: win
+          # Windows disabled until CUDA 13.2 installer issue is resolved.
+          # Melanie can build from source with build.bat for now.
+          # - platform: windows-latest
+          #   os_short: win
     runs-on: ${{ matrix.platform }}
 
     steps:
