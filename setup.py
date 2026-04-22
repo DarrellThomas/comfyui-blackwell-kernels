@@ -18,11 +18,15 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 # Platform-specific C++ compiler flags
 if sys.platform == "win32":
-    # /Zc:preprocessor is needed for CCCL but conflicts with PyTorch headers.
-    # Suppress the CCCL warning instead and use /permissive- for better compat.
-    cxx_flags = ["/O2", "/std:c++17", "/DCCCL_IGNORE_MSVC_TRADITIONAL_PREPROCESSOR_WARNING"]
+    cxx_flags = ["/O2", "/std:c++17"]
+    # Windows uses CUDA 12.8 (sm_120, no CCCL conflicts with PyTorch)
+    cuda_arch = "compute_120"
+    sm_code = "sm_120"
 else:
     cxx_flags = ["-O3", "-std=c++17"]
+    # Linux uses CUDA 13.2 (sm_120a)
+    cuda_arch = "compute_120a"
+    sm_code = "sm_120a"
 
 setup(
     name="comfyui-blackwell-kernels",
@@ -43,11 +47,11 @@ setup(
                 "nvcc": [
                     "-O3",
                     "--use_fast_math",
-                    "-gencode", "arch=compute_120a,code=sm_120a",
+                    "-gencode", f"arch={cuda_arch},code={sm_code}",
                     "-std=c++17",
                     "--expt-relaxed-constexpr",
                     "-lineinfo",
-                ] + (["-Xcompiler", "/DCCCL_IGNORE_MSVC_TRADITIONAL_PREPROCESSOR_WARNING"] if sys.platform == "win32" else []),
+                ],
             },
             include_dirs=[
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),

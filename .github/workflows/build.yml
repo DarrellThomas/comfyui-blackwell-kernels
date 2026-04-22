@@ -49,8 +49,9 @@ jobs:
         if: matrix.os_short == 'win'
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
-          cuda: '13.2.0'
-          method: 'local'
+          cuda: '12.8.0'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "cudart_dev", "visual_studio_integration"]'
           use-github-cache: true
 
       - name: Set CUDA_HOME (Windows)

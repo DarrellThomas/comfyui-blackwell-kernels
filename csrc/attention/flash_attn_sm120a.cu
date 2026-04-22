@@ -1,11 +1,9 @@
 // Copyright (c) 2026 Darrell Thomas. MIT License. See LICENSE file.
 //
 // Flash Attention forward for sm_120a (RTX 5090).
-// D=64: Br=64 Bc=64 (K double-buffer), causal and non-causal.
-//   exp2f softmax (MUFU.EX2 direct) with LOG2E folded into Q scale.
-//   Pipeline: V+K[next] prefetch → QK^T → softmax → wait V → PV → wait K.
+// D=64: Br=64 Bc=128 non-causal, Br=64 Bc=64 causal (K double-buffer).
 // D=128: MMA kernel with K double-buffer pipeline.
-// D=40: MMA kernel with zero-padded D→64.
+// D=40: scalar fallback.
 
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
@@ -141,19 +139,7 @@ flash_attn_mma_d64(
         }
         bk::cp_async_commit();
 
-        // ── K[next] prefetch (V = older group, K = newer group) ─────
-        if (has_next) {
-            int nxt = (kv_t + 1) * Bc;
-            __nv_bfloat16* k_nxt = k_phase ? k_smem_a : k_smem_b;
-            for (int ci = tid; ci < TILE_CHUNKS; ci += BLOCK) {
-                int row = ci / (D / 8), col8 = (ci % (D / 8)) * 8;
-                int gr = nxt + row;
-                bk::cp_async_128_zfill(&k_nxt[swz<D>(row, col8)], &K_ptr[gr * D + col8], gr < N);
-            }
-            bk::cp_async_commit();
-        }
-
-        // ── S = Q_regs @ K^T (V + K[next] loading in background) ───
+        // ── S = Q_regs @ K^T (K already in k_cur from double-buffer) ─
         float s_acc[ACC];
         #pragma unroll
         for (int i = 0; i < ACC; i++) s_acc[i] = 0.0f;
@@ -170,7 +156,24 @@ flash_attn_mma_d64(
             }
         }
 
-        // ── Softmax (register-only, V+K[next] still loading) ──────── ─────────────────────────────────────────────────
+        // ── K[next] prefetch ─────────────────────────────��────────────
+        if (has_next) {
+            int nxt = (kv_t + 1) * Bc;
+            __nv_bfloat16* k_nxt = k_phase ? k_smem_a : k_smem_b;
+            for (int ci = tid; ci < TILE_CHUNKS; ci += BLOCK) {
+                int row = ci / (D / 8), col8 = (ci % (D / 8)) * 8;
+                int gr = nxt + row;
+                bk::cp_async_128_zfill(&k_nxt[swz<D>(row, col8)], &K_ptr[gr * D + col8], gr < N);
+            }
+            bk::cp_async_commit();
+        }
+
+        // ── Wait for V ──────────────────────────────────���────────────
+        if (has_next) bk::cp_async_wait<1>();
+        else          bk::cp_async_wait<0>();
+        __syncthreads();
+
+        // ── Softmax ─────────────────────────────────��────────────────
         float rmax_a = -FLT_MAX, rmax_b = -FLT_MAX;
         #pragma unroll
         for (int n = 0; n < N_TILES; n++) {
@@ -206,12 +209,7 @@ flash_attn_mma_d64(
         for(int d=1;d<4;d<<=1){lt_a+=__shfl_xor_sync(0xffffffff,lt_a,d);lt_b+=__shfl_xor_sync(0xffffffff,lt_b,d);}
         l_a+=lt_a;l_b+=lt_b;
 
-        // ── Wait V, sync (V needed for P@V below) ───────────────────
-        if (has_next) bk::cp_async_wait<1>();
-        else          bk::cp_async_wait<0>();
-        __syncthreads();
-
-        // ── O += P @ V (K[next] continues loading in background) ───────────────────────────────────────────────
+        // ── O += P @ V ───────────────────────────────────────────────
         #pragma unroll
         for(int k=0;k<K_STEPS;k++){
             int nt0=k*2,nt1=k*2+1;
@@ -1242,7 +1240,7 @@ torch::Tensor flash_attn_forward(
 
     auto O = torch::zeros_like(Q);
     float sc = 1.0f/sqrtf((float)D);
-    float sc_log2e = sc * LOG2E_F;  // For exp2f-based softmax kernels
+    float sc_log2e = sc * LOG2E_F;
     auto d = [&](){
         struct{const __nv_bfloat16*q,*k,*v;__nv_bfloat16*o;}r;
         r.q=reinterpret_cast<const __nv_bfloat16*>(Q.data_ptr());
@@ -1278,24 +1276,8 @@ torch::Tensor flash_attn_forward(
     return O;
 }
 
-// Forward declarations from group_norm_linear_sm120a.cu
-torch::Tensor group_norm_forward(
-    torch::Tensor X, torch::Tensor gamma, torch::Tensor beta,
-    int64_t groups, double eps);
-torch::Tensor fused_group_norm_linear_forward(
-    torch::Tensor X, torch::Tensor weight, torch::Tensor gamma,
-    torch::Tensor beta, torch::Tensor linear_bias, int64_t groups);
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("flash_attn_forward", &flash_attn_forward,
           "Flash Attention forward (sm_120a)",
           py::arg("Q"), py::arg("K"), py::arg("V"), py::arg("causal")=false);
-    m.def("group_norm_forward", &group_norm_forward,
-          "GroupNorm forward (sm_120a)",
-          py::arg("X"), py::arg("gamma"), py::arg("beta"),
-          py::arg("groups"), py::arg("eps")=1e-5);
-    m.def("fused_group_norm_linear_forward", &fused_group_norm_linear_forward,
-          "GroupNorm + Linear forward (sm_120a)",
-          py::arg("X"), py::arg("weight"), py::arg("gamma"),
-          py::arg("beta"), py::arg("linear_bias"), py::arg("groups"));
 }
