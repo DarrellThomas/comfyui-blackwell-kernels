@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     strategy:
@@ -46,10 +49,8 @@ jobs:
         if: matrix.os_short == 'win'
         shell: pwsh
         run: |
-          # Download CUDA 13.2 network installer
           $url = "https://developer.download.nvidia.com/compute/cuda/13.2.0/network_installers/cuda_13.2.0_windows_network.exe"
           Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe
-          # Silent install — toolkit only (no driver, no samples)
           Start-Process -FilePath .\cuda_installer.exe -ArgumentList "-s cuda_toolkit_13.2" -Wait
           echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           echo "CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -57,17 +58,20 @@ jobs:
       # ── Python deps ──
 
       - name: Install PyTorch + build deps
+        shell: bash
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cu132
-          pip install setuptools wheel build
+          # cu126 wheels are the latest available and work with CUDA 13.2 (backward compat)
+          pip install torch --index-url https://download.pytorch.org/whl/cu126
+          pip install setuptools wheel
 
       # ── Build ──
 
       - name: Build wheel
-        run: python -m build --wheel --no-isolation
+        shell: bash
+        run: |
+          TORCH_CUDA_ARCH_LIST="12.0a" pip wheel . --no-deps --wheel-dir dist/
         env:
           CUDA_HOME: ${{ env.CUDA_HOME }}
-          TORCH_CUDA_ARCH_LIST: "12.0a"
 
       # ── Sign (Windows only) ──
 
@@ -85,9 +89,9 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
         run: |
-          # Unpack wheel, sign .pyd, repack
           $wheel = (Get-ChildItem dist/*.whl).FullName
           $tmpdir = "dist/unpack"
+          pip install wheel
           python -m wheel unpack $wheel -d $tmpdir
           $pyds = Get-ChildItem -Recurse $tmpdir -Filter *.pyd
           foreach ($pyd in $pyds) {
@@ -97,7 +101,6 @@ jobs:
               -t "http://timestamp.acs.microsoft.com" `
               -i $pyd.FullName
           }
-          # Repack
           Remove-Item $wheel
           $pkgdir = (Get-ChildItem $tmpdir -Directory).FullName
           python -m wheel pack $pkgdir -d dist
@@ -139,16 +142,25 @@ jobs:
 
           RTX 5090 (sm_120a) CUDA kernels for ComfyUI.
 
-          ### Install
-          \`\`\`bash
-          pip install comfyui_blackwell_kernels-*-$(python -c 'import platform; print(platform.system().lower())' )*.whl
+          ### Install (pre-built)
+          Download the .whl for your OS and run:
+          \`\`\`
+          pip install <downloaded>.whl
           \`\`\`
 
-          Or place in \`ComfyUI/custom_nodes/comfyui-blackwell-kernels/\`
+          ### Install (from source)
+          \`\`\`
+          git clone https://github.com/DarrellThomas/comfyui-blackwell-kernels
+          cd comfyui-blackwell-kernels
+          ./build.sh   # Linux
+          build.bat     # Windows
+          \`\`\`
+
+          Then copy to \`ComfyUI/custom_nodes/comfyui-blackwell-kernels/\`
 
           ### Requirements
-          - NVIDIA RTX 5090
-          - CUDA 13.2+
+          - NVIDIA RTX 5090 (Compute Capability 12.0)
+          - CUDA 13.2 Toolkit
           - PyTorch 2.5+
           - Python 3.10+" \
             dist/*.whl dist/SHA256SUMS.txt
