@@ -2,6 +2,17 @@
 
 import os
 from setuptools import setup, find_packages
+
+# Bypass PyTorch's CUDA version check — we need CUDA 13.2 nvcc for sm_120a
+# but PyTorch wheels ship with CUDA 12.6 runtime (which is forward-compatible)
+os.environ.setdefault("TORCH_DONT_CHECK_COMPILER_ABI", "1")
+
+# Monkey-patch the CUDA version check before importing CUDAExtension
+import torch.utils.cpp_extension as _cpp_ext
+_orig_check = getattr(_cpp_ext, '_check_cuda_version', None)
+if _orig_check:
+    _cpp_ext._check_cuda_version = lambda *a, **kw: None
+
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 setup(

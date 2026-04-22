@@ -70,15 +70,39 @@ jobs:
         if: matrix.os_short == 'linux'
         run: |
           export CUDA_HOME=/usr/local/cuda-13.2
+          export PATH=/usr/local/cuda-13.2/bin:$PATH
           export TORCH_CUDA_ARCH_LIST="12.0a"
+          export TORCH_DONT_CHECK_COMPILER_ABI=1
+          # Bypass PyTorch's CUDA version mismatch check (we need 13.2 nvcc for sm_120a)
+          python -c "import torch.utils.cpp_extension; torch.utils.cpp_extension.CUDA_HOME='/usr/local/cuda-13.2'"
           python setup.py bdist_wheel --dist-dir dist/
+        env:
+          PYTORCH_NVCC: /usr/local/cuda-13.2/bin/nvcc
 
       - name: Build wheel (Windows)
         if: matrix.os_short == 'win'
         shell: pwsh
         run: |
-          $env:CUDA_HOME = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2"
+          # Find actual CUDA install path (installer may use different version dir)
+          $cudaPaths = @(
+            "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2",
+            "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2.0"
+          )
+          $cudaHome = $null
+          foreach ($p in $cudaPaths) {
+            if (Test-Path "$p\bin\nvcc.exe") { $cudaHome = $p; break }
+          }
+          if (-not $cudaHome) {
+            # Search for any CUDA 13.x
+            $found = Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "v13*" }
+            if ($found) { $cudaHome = $found[0].FullName }
+          }
+          if (-not $cudaHome) { Write-Error "CUDA toolkit not found"; exit 1 }
+          Write-Host "Using CUDA_HOME=$cudaHome"
+          $env:CUDA_HOME = $cudaHome
+          $env:PATH = "$cudaHome\bin;$env:PATH"
           $env:TORCH_CUDA_ARCH_LIST = "12.0a"
+          $env:TORCH_DONT_CHECK_COMPILER_ABI = "1"
           python setup.py bdist_wheel --dist-dir dist/
 
       # ── Sign (Windows only) ──
