@@ -20,10 +20,8 @@ jobs:
         include:
           - platform: ubuntu-24.04
             os_short: linux
-          # Windows disabled until CUDA 13.2 installer issue is resolved.
-          # Melanie can build from source with build.bat for now.
-          # - platform: windows-latest
-          #   os_short: win
+          - platform: windows-latest
+            os_short: win
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -35,7 +33,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      # ── CUDA Toolkit (no GPU needed, just compiler) ──
+      # ── CUDA Toolkit ──
 
       - name: Install CUDA Toolkit (Linux)
         if: matrix.os_short == 'linux'
@@ -49,20 +47,25 @@ jobs:
 
       - name: Install CUDA Toolkit (Windows)
         if: matrix.os_short == 'win'
+        uses: Jimver/cuda-toolkit@v0.2.35
+        with:
+          cuda: '13.2.0'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          use-github-cache: true
+
+      - name: Set CUDA_HOME (Windows)
+        if: matrix.os_short == 'win'
         shell: pwsh
         run: |
-          $url = "https://developer.download.nvidia.com/compute/cuda/13.2.0/network_installers/cuda_13.2.0_windows_network.exe"
-          Invoke-WebRequest -Uri $url -OutFile cuda_installer.exe
-          Start-Process -FilePath .\cuda_installer.exe -ArgumentList "-s cuda_toolkit_13.2" -Wait
-          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          echo "CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CUDA_HOME=$env:CUDA_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+          nvcc --version
 
       # ── Python deps ──
 
       - name: Install PyTorch + build deps
         shell: bash
         run: |
-          # cu126 wheels are the latest available and work with CUDA 13.2 (backward compat)
           pip install torch --index-url https://download.pytorch.org/whl/cu126
           pip install setuptools wheel
 
@@ -75,8 +78,6 @@ jobs:
           export PATH=/usr/local/cuda-13.2/bin:$PATH
           export TORCH_CUDA_ARCH_LIST="12.0a"
           export TORCH_DONT_CHECK_COMPILER_ABI=1
-          # Bypass PyTorch's CUDA version mismatch check (we need 13.2 nvcc for sm_120a)
-          python -c "import torch.utils.cpp_extension; torch.utils.cpp_extension.CUDA_HOME='/usr/local/cuda-13.2'"
           python setup.py bdist_wheel --dist-dir dist/
         env:
           PYTORCH_NVCC: /usr/local/cuda-13.2/bin/nvcc
@@ -85,26 +86,9 @@ jobs:
         if: matrix.os_short == 'win'
         shell: pwsh
         run: |
-          # Find actual CUDA install path (installer may use different version dir)
-          $cudaPaths = @(
-            "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2",
-            "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.2.0"
-          )
-          $cudaHome = $null
-          foreach ($p in $cudaPaths) {
-            if (Test-Path "$p\bin\nvcc.exe") { $cudaHome = $p; break }
-          }
-          if (-not $cudaHome) {
-            # Search for any CUDA 13.x
-            $found = Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "v13*" }
-            if ($found) { $cudaHome = $found[0].FullName }
-          }
-          if (-not $cudaHome) { Write-Error "CUDA toolkit not found"; exit 1 }
-          Write-Host "Using CUDA_HOME=$cudaHome"
-          $env:CUDA_HOME = $cudaHome
-          $env:PATH = "$cudaHome\bin;$env:PATH"
           $env:TORCH_CUDA_ARCH_LIST = "12.0a"
           $env:TORCH_DONT_CHECK_COMPILER_ABI = "1"
+          nvcc --version
           python setup.py bdist_wheel --dist-dir dist/
 
       # ── Sign (Windows only) ──
