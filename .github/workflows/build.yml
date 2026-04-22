@@ -50,8 +50,7 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.35
         with:
           cuda: '13.2.0'
-          method: 'network'
-          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          method: 'local'
           use-github-cache: true
 
       - name: Set CUDA_HOME (Windows)
