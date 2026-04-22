@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel", "torch>=2.5"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comfyui-blackwell-kernels"
+version = "0.1.0"
+description = "RTX 5090 (sm_120a) CUDA kernels for ComfyUI — Flash Attention, GroupNorm, MLA"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Darrell Thomas"}]
+requires-python = ">=3.10"
+dependencies = ["torch>=2.5"]
+
+[project.urls]
+Homepage = "https://github.com/DarrellThomas/comfyui-blackwell-kernels"
