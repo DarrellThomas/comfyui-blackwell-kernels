@@ -18,7 +18,9 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 # Platform-specific C++ compiler flags
 if sys.platform == "win32":
-    cxx_flags = ["/O2", "/std:c++17", "/Zc:preprocessor"]
+    # /Zc:preprocessor is needed for CCCL but conflicts with PyTorch headers.
+    # Suppress the CCCL warning instead and use /permissive- for better compat.
+    cxx_flags = ["/O2", "/std:c++17", "/DCCCL_IGNORE_MSVC_TRADITIONAL_PREPROCESSOR_WARNING"]
 else:
     cxx_flags = ["-O3", "-std=c++17"]
 
@@ -45,7 +47,7 @@ setup(
                     "-std=c++17",
                     "--expt-relaxed-constexpr",
                     "-lineinfo",
-                ] + (["-Xcompiler", "/Zc:preprocessor"] if sys.platform == "win32" else []),
+                ] + (["-Xcompiler", "/DCCCL_IGNORE_MSVC_TRADITIONAL_PREPROCESSOR_WARNING"] if sys.platform == "win32" else []),
             },
             include_dirs=[
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),
