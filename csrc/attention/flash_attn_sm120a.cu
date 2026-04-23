@@ -8,18 +8,16 @@
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 
-// Minimal PyTorch includes — avoid torch/extension.h which pulls in
-// compiled_autograd.h (broken std::byte on MSVC with CUDA 12.8+)
+// torch/extension.h pulls in compiled_autograd.h which has std::byte
+// conflicts on MSVC. Use minimal includes on Windows, full on Linux.
+#ifdef _MSC_VER
 #include <torch/types.h>
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/library.h>
-#include <pybind11/pybind11.h>
-
-// TORCH_CHECK and TORCH_EXTENSION_NAME macros
-#ifndef TORCH_CHECK
-#include <c10/util/Exception.h>
-#define TORCH_CHECK C10_CHECK
+namespace py = pybind11;
+#else
+#include <torch/extension.h>
 #endif
 #include <cmath>
 #include <cfloat>
@@ -1288,8 +1286,6 @@ torch::Tensor flash_attn_forward(
     }
     return O;
 }
-
-namespace py = pybind11;
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("flash_attn_forward", &flash_attn_forward,
