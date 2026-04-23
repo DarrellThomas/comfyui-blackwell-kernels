@@ -1,18 +1,12 @@
 # Copyright (c) 2026 Darrell Thomas. MIT License. See LICENSE file.
 
-"""ComfyUI custom node — Blackwell Kernels for RTX 5090.
-
-Automatically replaces ComfyUI's attention with a custom Flash Attention
-kernel optimized for sm_120a (RTX 5090). No configuration needed —
-detects the GPU at startup and activates if supported.
-"""
+"""ComfyUI custom node — Blackwell Kernels for RTX 5090."""
 
 import torch
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 
-# Only activate on RTX 5090 (sm_120a / compute capability 12.0)
 _SUPPORTED = False
 _ACTIVE = False
 _original_attention = None
@@ -34,55 +28,49 @@ else:
 
         def _blackwell_attention(q, k, v, heads, mask=None, attn_precision=None,
                                  skip_reshape=False, skip_output_reshape=False, **kwargs):
-            """Drop-in replacement for ComfyUI's optimized_attention.
+            """Drop-in for ComfyUI's optimized_attention.
 
-            Handles the reshape logic ComfyUI expects, then calls our kernel.
-            Falls back to the original attention for unsupported configs.
+            Mirrors the exact reshape logic from ComfyUI's attention_pytorch:
+              skip_reshape=False: q is [B, N, D_total], reshape to [B, H, N, d_head]
+              skip_reshape=True:  q is already [B, H, N, d_head]
             """
-            # ComfyUI passes q/k/v as [B*H, N, D] when skip_reshape=False
-            # or [B, H, N, D] when skip_reshape=True
-            if not skip_reshape:
-                B_times_H, N, D = q.shape
-                H = heads
-                B = B_times_H // H
-                q = q.reshape(B, H, N, D)
-                k = k.reshape(B, H, N, D)
-                v = v.reshape(B, H, N, D)
+            if skip_reshape:
+                if q.ndim == 4:
+                    b, _, _, dim_head = q.shape
+                else:
+                    # Some paths pass 3D even with skip_reshape=True
+                    b, _, dim_head = q.shape
+                    dim_head //= heads
+                    q = q.reshape(b, -1, heads, dim_head).transpose(1, 2)
+                    k = k.reshape(b, -1, heads, dim_head).transpose(1, 2)
+                    v = v.reshape(b, -1, heads, dim_head).transpose(1, 2)
             else:
-                B, H, N, D = q.shape
+                b, _, dim_head = q.shape
+                dim_head //= heads
+                q = q.reshape(b, -1, heads, dim_head).transpose(1, 2)
+                k = k.reshape(b, -1, heads, dim_head).transpose(1, 2)
+                v = v.reshape(b, -1, heads, dim_head).transpose(1, 2)
 
-            # Our kernel supports D=40, 64, 128 in BF16
-            if D not in (40, 64, 128) or q.dtype != torch.bfloat16:
-                # Fall back to original for unsupported head dims or dtypes
-                if _original_attention is not None:
-                    if not skip_reshape:
-                        q = q.reshape(B * H, N, D)
-                        k = k.reshape(B * H, N, D)
-                        v = v.reshape(B * H, N, D)
-                    return _original_attention(q, k, v, heads, mask=mask,
-                                               attn_precision=attn_precision,
-                                               skip_reshape=skip_reshape,
-                                               skip_output_reshape=skip_output_reshape,
-                                               **kwargs)
-                # Last resort: PyTorch SDPA
-                import torch.nn.functional as F
-                out = F.scaled_dot_product_attention(q, k, v)
-                if not skip_output_reshape:
-                    out = out.transpose(1, 2).reshape(B, N, H * D)
-                return out
+            # Now q/k/v are [B, H, N, dim_head]
+            B, H, N, D = q.shape
 
-            # Causal = False for image generation (no autoregressive masking)
-            causal = False
+            # Only use our kernel for supported dims + BF16
+            if D in (40, 64, 128) and q.dtype == torch.bfloat16:
+                q = q.contiguous()
+                k = k.contiguous()
+                v = v.contiguous()
+                out = flash_attention(q, k, v, causal=False)
+            else:
+                # Fall back to PyTorch SDPA
+                out = torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, attn_mask=mask)
 
-            out = flash_attention(q, k, v, causal=causal)  # [B, H, N, D]
-
+            # [B, H, N, D] -> output format
             if not skip_output_reshape:
-                # ComfyUI expects [B, N, H*D] output
-                out = out.transpose(1, 2).reshape(B, N, H * D)
-
+                out = out.transpose(1, 2).reshape(b, -1, heads * D)
             return out
 
-        # Monkey-patch ComfyUI's attention dispatcher
+        # Monkey-patch
         try:
             import comfy.ldm.modules.attention as comfy_attn
             if hasattr(comfy_attn, 'optimized_attention'):
@@ -91,11 +79,9 @@ else:
                 _ACTIVE = True
                 print(f"[Blackwell Kernels] ACTIVE — RTX 5090 Flash Attention replacing SDPA (D=40/64/128)")
             else:
-                print(f"[Blackwell Kernels] WARNING — comfy.ldm.modules.attention.optimized_attention not found")
-                print(f"[Blackwell Kernels] Kernel loaded but not patched into ComfyUI")
+                print(f"[Blackwell Kernels] WARNING — optimized_attention not found")
         except ImportError:
             print(f"[Blackwell Kernels] WARNING — ComfyUI not detected (standalone mode)")
-            print(f"[Blackwell Kernels] Kernel available via: from blackwell_kernels import flash_attention")
 
     except ImportError as e:
         print(f"[Blackwell Kernels] Extension not compiled: {e}")
