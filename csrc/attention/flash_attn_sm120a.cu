@@ -1289,6 +1289,8 @@ torch::Tensor flash_attn_forward(
     return O;
 }
 
+namespace py = pybind11;
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("flash_attn_forward", &flash_attn_forward,
           "Flash Attention forward (sm_120a)",
