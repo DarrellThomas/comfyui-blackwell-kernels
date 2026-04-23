@@ -90,11 +90,35 @@ jobs:
           nvcc --version
           python setup.py bdist_wheel --dist-dir dist/
 
-      # ── Sign (Windows only — disabled until Azure Trusted Signing CLI is available) ──
-      # TODO: re-enable when azure.codesigning.dlib is published to NuGet
-      # - name: Sign wheel contents (Windows)
-      #   if: matrix.os_short == 'win'
-      #   ...
+      # ── Sign (Windows only) ──
+
+      - name: Install Rust + trusted-signing-cli (Windows)
+        if: matrix.os_short == 'win'
+        shell: pwsh
+        run: |
+          cargo install trusted-signing-cli
+
+      - name: Sign wheel contents (Windows)
+        if: matrix.os_short == 'win'
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          pip install wheel
+          $whl = (Get-ChildItem dist/*.whl).FullName
+          $tmpdir = "dist/unpack"
+          python -m wheel unpack $whl -d $tmpdir
+          $pyds = Get-ChildItem -Recurse $tmpdir -Filter *.pyd
+          foreach ($pyd in $pyds) {
+            Write-Host "Signing $($pyd.FullName)"
+            trusted-signing-cli -e https://cus.codesigning.azure.net -a enparlant-public -c redshed-ai $pyd.FullName
+          }
+          Remove-Item $whl
+          $pkgdir = (Get-ChildItem $tmpdir -Directory).FullName
+          python -m wheel pack $pkgdir -d dist
+          Write-Host "Signed wheel repacked"
 
 
       # ── Upload ──
