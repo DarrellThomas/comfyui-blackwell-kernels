@@ -11,10 +11,14 @@
 // torch/extension.h pulls in compiled_autograd.h which has std::byte
 // conflicts on MSVC. Use minimal includes on Windows, full on Linux.
 #ifdef _MSC_VER
+// torch/extension.h pulls in compiled_autograd.h which has std::byte
+// conflicts on MSVC. Use minimal includes on Windows.
 #include <torch/types.h>
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <torch/library.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 namespace py = pybind11;
 #else
 #include <torch/extension.h>
