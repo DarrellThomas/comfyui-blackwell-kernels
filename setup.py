@@ -18,8 +18,7 @@ from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 # Platform-specific C++ compiler flags
 if sys.platform == "win32":
-    # /D_HAS_STD_BYTE=0 fixes 'std' ambiguous symbol in PyTorch headers on MSVC
-    cxx_flags = ["/O2", "/std:c++17", "/D_HAS_STD_BYTE=0"]
+    cxx_flags = ["/O2", "/std:c++17"]
     # Windows uses CUDA 12.8 (sm_120, no CCCL conflicts with PyTorch)
     cuda_arch = "compute_120"
     sm_code = "sm_120"
@@ -57,6 +56,9 @@ setup(
             include_dirs=[
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),
             ],
+            # _HAS_STD_BYTE=0 fixes 'std' ambiguous symbol in PyTorch headers on MSVC.
+            # This define is applied via -D by both cl.exe and nvcc consistently.
+            define_macros=[("_HAS_STD_BYTE", "0")] if sys.platform == "win32" else [],
         )
     ],
     cmdclass={"build_ext": BuildExtension},
