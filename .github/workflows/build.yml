@@ -90,37 +90,12 @@ jobs:
           nvcc --version
           python setup.py bdist_wheel --dist-dir dist/
 
-      # ── Sign (Windows only) ──
+      # ── Sign (Windows only — disabled until Azure Trusted Signing CLI is available) ──
+      # TODO: re-enable when azure.codesigning.dlib is published to NuGet
+      # - name: Sign wheel contents (Windows)
+      #   if: matrix.os_short == 'win'
+      #   ...
 
-      - name: Install Azure Trusted Signing CLI (Windows)
-        if: matrix.os_short == 'win'
-        shell: pwsh
-        run: |
-          dotnet tool install --global Azure.CodeSigning.Dlib
-
-      - name: Sign wheel contents (Windows)
-        if: matrix.os_short == 'win'
-        shell: pwsh
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        run: |
-          $wheel = (Get-ChildItem dist/*.whl).FullName
-          $tmpdir = "dist/unpack"
-          pip install wheel
-          python -m wheel unpack $wheel -d $tmpdir
-          $pyds = Get-ChildItem -Recurse $tmpdir -Filter *.pyd
-          foreach ($pyd in $pyds) {
-            Write-Host "Signing $($pyd.FullName)"
-            dlib sign -a redshed-ai -c DarrellThomas -cse EUS `
-              -cfp "CN=Darrell Thomas" `
-              -t "http://timestamp.acs.microsoft.com" `
-              -i $pyd.FullName
-          }
-          Remove-Item $wheel
-          $pkgdir = (Get-ChildItem $tmpdir -Directory).FullName
-          python -m wheel pack $pkgdir -d dist
 
       # ── Upload ──
 
