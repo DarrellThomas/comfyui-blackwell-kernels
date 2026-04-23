@@ -52,7 +52,7 @@ setup(
                     "-std=c++17",
                     "--expt-relaxed-constexpr",
                     "-lineinfo",
-                ] + (["-Xcompiler", "/D_HAS_STD_BYTE=0"] if sys.platform == "win32" else []),
+                ],
             },
             include_dirs=[
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),
