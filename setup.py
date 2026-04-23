@@ -30,7 +30,7 @@ else:
 
 setup(
     name="comfyui-blackwell-kernels",
-    version="0.1.0",
+    version="0.1.1",
     description="RTX 5090 (sm_120a) CUDA kernels for ComfyUI — Flash Attention, GroupNorm, MLA",
     author="Darrell Thomas",
     license="MIT",

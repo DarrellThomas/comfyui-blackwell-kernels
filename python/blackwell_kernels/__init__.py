@@ -2,6 +2,6 @@
 
 """ComfyUI Blackwell Kernels — RTX 5090 (sm_120a) acceleration for ComfyUI."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from blackwell_kernels.attention import flash_attention
