@@ -56,9 +56,6 @@ setup(
             include_dirs=[
                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "common"),
             ],
-            # _HAS_STD_BYTE=0 fixes 'std' ambiguous symbol in PyTorch headers on MSVC.
-            # This define is applied via -D by both cl.exe and nvcc consistently.
-            define_macros=[("_HAS_STD_BYTE", "0")] if sys.platform == "win32" else [],
         )
     ],
     cmdclass={"build_ext": BuildExtension},
